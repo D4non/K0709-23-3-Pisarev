@@ -51,16 +51,18 @@
 
 ```mermaid
 flowchart LR
-  Client[Client App] -->|like/pass/match/message| InteractionAPI[interaction-service API]
-  InteractionAPI -->|produce| Kafka[Kafka topics]
-  Kafka -->|consume| RatingAgg["rating-aggregator (Kafka consumer)"]
-  RatingAgg -->|upsert aggregates| Postgres["PostgreSQL"]
-  RatingAgg -->|Celery periodic recompute| Postgres
+  TgBot["Telegram Bot"] -->|user actions| BotGateway["Bot Gateway / API"]
+  BotGateway -->|produce interactions| Kafka["Kafka topics"]
+  Kafka -->|consume events| RatingConsumer["rating-aggregator consumer"]
 
-  Client -->|request recommendations| RecoAPI[recommendation-service API]
+  RatingConsumer -->|upsert Level2 aggregates| Postgres["PostgreSQL"]
+  CeleryBeat["Celery beat (scheduler)"] -->|enqueue jobs| CeleryWorkers["Celery workers"]
+  CeleryWorkers -->|recompute Level2/Level3 snapshots| Postgres
+
+  BotGateway -->|request recommendations| RecoAPI["recommendation-service API"]
   RecoAPI -->|read snapshots / candidates| Postgres
   RecoAPI -->|get/set pre-ranked queue| Redis["Redis"]
-  RecoAPI --> Client
+  RecoAPI -->|send next cards| TgBot
 ```
 
 Ключевая идея:
