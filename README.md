@@ -62,7 +62,6 @@ flowchart LR
   BotGateway -->|request recommendations| RecoAPI["recommendation-service API"]
   RecoAPI -->|read snapshots / candidates| Postgres
   RecoAPI -->|get/set pre-ranked queue| Redis["Redis"]
-  RecoAPI -->|send next cards| TgBot
 ```
 
 Ключевая идея:
