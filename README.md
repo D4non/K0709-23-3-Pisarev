@@ -56,7 +56,6 @@ flowchart LR
   Kafka -->|consume events| RatingConsumer["rating-aggregator consumer"]
 
   RatingConsumer -->|upsert Level2 aggregates| Postgres["PostgreSQL"]
-  CeleryBeat["Celery beat (scheduler)"] -->|enqueue recompute jobs| Kafka
   Kafka -->|consume recompute jobs| CeleryWorkers["Celery workers"]
   CeleryWorkers -->|recompute Level2/Level3 snapshots| Postgres
 
