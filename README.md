@@ -56,8 +56,8 @@ flowchart LR
   Kafka -->|consume events| RatingConsumer["rating-aggregator consumer"]
 
   RatingConsumer -->|upsert Level2 aggregates| Postgres["PostgreSQL"]
-  CeleryBroker["Celery broker (RabbitMQ/Redis)"] -->|dispatch jobs| CeleryWorkers["Celery workers"]
-  CeleryBeat["Celery beat (scheduler)"] -->|enqueue jobs| CeleryBroker
+  CeleryBeat["Celery beat (scheduler)"] -->|enqueue recompute jobs| Kafka
+  Kafka -->|consume recompute jobs| CeleryWorkers["Celery workers"]
   CeleryWorkers -->|recompute Level2/Level3 snapshots| Postgres
 
   BotGateway -->|request recommendations| RecoAPI["recommendation-service API"]
@@ -222,7 +222,8 @@ flowchart LR
 
 ## 6) Celery: пересчет рейтингов
 
-Celery в обязательном порядке работает через отдельный broker заданий (типично RabbitMQ или Redis): `Celery beat` планирует задачи, а `Celery workers` их забирают из брокера и выполняют в фоне.
+Kafka в этой схеме выступает как единый брокер:
+`Celery beat` планирует пересчеты и публикует job-сообщения в Kafka (например, в топик `rating.recompute.jobs`), а `Celery workers` потребляют эти сообщения и выполняют пересчет Level 2 / пересборку Level 3 снапшотов в PostgreSQL.
 
 ### 6.1 Инкрементальные обновления (почти real-time)
 
