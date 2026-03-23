@@ -53,13 +53,13 @@
 flowchart LR
   Client[Client App] -->|like/pass/match/message| InteractionAPI[interaction-service API]
   InteractionAPI -->|produce| Kafka[Kafka topics]
-  Kafka -->|consume| RatingAgg[rating-aggregator (Kafka consumer)]
-  RatingAgg -->|upsert aggregates| Postgres[(PostgreSQL)]
+  Kafka -->|consume| RatingAgg["rating-aggregator (Kafka consumer)"]
+  RatingAgg -->|upsert aggregates| Postgres["PostgreSQL"]
   RatingAgg -->|Celery periodic recompute| Postgres
 
   Client -->|request recommendations| RecoAPI[recommendation-service API]
   RecoAPI -->|read snapshots / candidates| Postgres
-  RecoAPI -->|get/set pre-ranked queue| Redis[(Redis)]
+  RecoAPI -->|get/set pre-ranked queue| Redis["Redis"]
   RecoAPI --> Client
 ```
 
