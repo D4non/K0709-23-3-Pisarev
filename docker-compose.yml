@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  bot-service:
+    build:
+      context: .
+      dockerfile: services/bot-service/Dockerfile
+    container_name: dating-bot-service
+    env_file:
+      - .env
+    restart: unless-stopped
