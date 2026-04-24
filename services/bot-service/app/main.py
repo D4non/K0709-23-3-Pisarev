@@ -1,14 +1,12 @@
 """
-Bot Service - Telegram bot for Dating application.
-Stage 2: Bot interface + User registration via /start.
+Bot Service — Telegram bot for Dating application.
+Stage 3: Profile persistence + browsing with ranking and Redis caching.
 """
 import sys
 import os
 from pathlib import Path
 
-# Add project root to sys.path so 'shared' module is discoverable
-project_root = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import asyncio
 import logging
@@ -19,7 +17,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 
-from app.handlers import start_handler
+from app.handlers import start_handler, browse_handler
 from shared.config import settings
 from shared.logger import setup_logger
 
@@ -27,18 +25,17 @@ logger = setup_logger("bot-service")
 
 
 async def on_startup(bot: Bot):
-    """Set bot commands on startup."""
     try:
         await bot.set_my_commands([
-            BotCommand(command="start", description="Начать использование бота и регистрация"),
+            BotCommand(command="start", description="Регистрация / обновление анкеты"),
+            BotCommand(command="browse", description="Смотреть анкеты"),
         ])
         logger.info("Bot commands registered")
-    except Exception as e:
-        logger.warning(f"Failed to set bot commands: {e}")
+    except Exception as exc:
+        logger.warning(f"Failed to set bot commands: {exc}")
 
 
 async def main():
-    """Main bot entry point."""
     logger.info("Starting bot service...")
 
     bot = Bot(
@@ -46,13 +43,9 @@ async def main():
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
 
-    storage = MemoryStorage()
-    dp = Dispatcher(storage=storage)
-
-    # Register handlers
+    dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(start_handler.router)
-
-    # Register startup callback
+    dp.include_router(browse_handler.router)
     dp.startup.register(on_startup)
 
     logger.info("Bot service initialized successfully")

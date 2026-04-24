@@ -9,7 +9,6 @@
 Дополнительно:
 - периодические пересчеты через **Celery**
 - **Redis** для кэширования предварительно отранжированных списков/очередей
-- потоковая обработка событий через **Kafka** (или аналогичную MQ) между сервисами
 - метрики/логирование везде, где есть вычисления и интеграции
 - хранение изображений в **S3-совместимом** хранилище (например, MinIO)
 
@@ -23,27 +22,24 @@
    - Анкеты кандидатов: возраст/пол/гео/интересы/качество заполнения.
    - Фото (связь с MinIO), статус/главная фотография.
    - Предпочтения viewer: возрастной диапазон, пол, город/радиус.
+   - API для событий с фронта: `like`, `pass`, `match`, `message_initiated` — записывает напрямую в PostgreSQL.
 
-2. **`interaction-service`**
-   - API для событий с фронта: `like`, `pass`, `match`, `message_initiated`.
-   - Публикует события в **Kafka**.
-
-3. **`rating-aggregator`**
-   - Kafka consumer(ы), которые инкрементально обновляют агрегаты поведенческого уровня (Level 2) в PostgreSQL.
+2. **`rating-aggregator`**
    - Celery workers/beat для регулярных пересчетов (снэпшоты Level 3).
+   - Инкрементально обновляет агрегаты поведенческого уровня (Level 2) в PostgreSQL.
 
-4. **`recommendation-service`**
-   - API “лента/подбор” для viewer.
+3. **`recommendation-service`**
+   - API "лента/подбор" для viewer.
    - Формирует ранжированный набор кандидатов из PostgreSQL и/или готового кэша в Redis.
-   - Кэширует “очередь” на сессию и подгружает следующие анкеты заранее.
-   
-5. **`media-service`** (опционально как отдельный модуль)
+   - Кэширует "очередь" на сессию и подгружает следующие анкеты заранее.
+
+4. **`media-service`** (опционально как отдельный модуль)
    - Генерация URL/подписей для MinIO.
    - Логика загрузки/доступа к изображениям.
 
-6. **Наблюдаемость**
+5. **Наблюдаемость**
    - единые контракты логов/метрик по сервисам
-   - контроль lag consumer’ов Kafka, ошибок Redis/Postgres, времени формирования выдачи
+   - контроль ошибок Redis/Postgres, времени формирования выдачи
 
 ---
 
@@ -52,12 +48,10 @@
 ```mermaid
 flowchart LR
   TgBot["Telegram Bot"] -->|user actions| BotGateway["Bot Gateway / API"]
-  BotGateway -->|produce interactions| Kafka["Kafka topics"]
-  Kafka -->|consume events| RatingConsumer["rating-aggregator consumer"]
+  BotGateway -->|POST /interactions| ProfileService["profile-service"]
+  ProfileService -->|upsert interactions & Level2 aggregates| Postgres["PostgreSQL"]
 
-  RatingConsumer -->|upsert Level2 aggregates| Postgres["PostgreSQL"]
-  Kafka -->|consume recompute jobs| CeleryWorkers["Celery workers"]
-  CeleryWorkers -->|recompute Level2/Level3 snapshots| Postgres
+  CeleryWorkers["Celery workers"] -->|recompute Level2/Level3 snapshots| Postgres
 
   BotGateway -->|request recommendations| RecoAPI["recommendation-service API"]
   RecoAPI -->|read snapshots / candidates| Postgres
@@ -78,7 +72,7 @@ flowchart LR
 Компоненты:
 1. **Возраст/пол**: соответствие возрастному диапазону и полу предпочтений viewer.
 2. **Гео**: совпадение города или близость (радиус/дистанция) между viewer и candidate.
-3. **Интересы**: пересечение interest’ов и/или сходство (например, Jaccard или weighted overlap).
+3. **Интересы**: пересечение interest'ов и/или сходство (например, Jaccard или weighted overlap).
 4. **Качество анкеты**:
    - полнота заполнения (например, доля заполненных полей или отдельный `bio_quality`)
    - количество/статус фото (например, наличие `main_photo` и число `active photos`)
@@ -88,7 +82,7 @@ flowchart LR
 
 ### 3.2 Уровень 2: поведенческий рейтинг
 
-Идея: поведенческий рейтинг характеризует “как часто кандидат выигрывает” с точки зрения общей аудитории.
+Идея: поведенческий рейтинг характеризует "как часто кандидат выигрывает" с точки зрения общей аудитории.
 
 Метрики на кандидате:
 1. `likes_count`
@@ -97,10 +91,10 @@ flowchart LR
 4. `message_initiated_count` (сколько раз после матча диалог был инициирован)
 5. (опционально на ранней итерации) разбиение по **тайм-слотам** активности:
    - morning/day/evening/night или 4/6/8 слотов
-   - учет “когда” вели себя пользователи (по event `ts`).
+   - учет "когда" вели себя пользователи (по event `ts`).
 
 Нормализация:
-- превращаем “сырые счетчики” в вероятности/индексы:
+- превращаем "сырые счетчики" в вероятности/индексы:
   - например, `like_rate = likes / (likes + passes)`
   - `match_rate = matches / likes` (или / (likes + passes), зависит от вашей трактовки)
   - `message_rate = messages_initiated / matches`
@@ -112,21 +106,21 @@ flowchart LR
 - `combined_score = w_primary * primary_score + w_behavioral * behavioral_score + w_referral * referral_bonus`
 
 Реферальный бонус:
-- `referral_bonus` можно задавать как фиксированную прибавку (например, кандидат/его приглашение дает бонус inviter’у)
-- или как коэффициент на основании количества/свежести приглашений (это уже “расширение”, но в схеме стоит место).
+- `referral_bonus` можно задавать как фиксированную прибавку (например, кандидат/его приглашение дает бонус inviter'у)
+- или как коэффициент на основании количества/свежести приглашений (это уже "расширение", но в схеме стоит место).
 
 Версионирование весов:
-- хранить `score_version`, чтобы при изменении весов не “ломать” уже сформированные снэпшоты.
+- хранить `score_version`, чтобы при изменении весов не "ломать" уже сформированные снэпшоты.
 
 ---
 
-## 4) Kafka: какие события нужны
+## 4) События взаимодействий
 
-Топики (пример именования):
-- `interaction.like`
-- `interaction.pass`
-- `interaction.match`
-- `interaction.message_initiated`
+Типы событий:
+- `like`
+- `pass`
+- `match`
+- `message_initiated`
 
 Минимальный payload (концептуально):
 - `viewer_id`
@@ -134,10 +128,9 @@ flowchart LR
 - `ts` (timestamp события, обязателен для time-of-day)
 - `metadata` (опционально: device, app_version, locale и т.п.)
 
-Почему Kafka:
-- разгружает API сервис от пересчетов
-- позволяет “догонять” вычисления consumers’ами
-- даёт основу для потоковой обработки общения сервисов/диалогов в будущем.
+События записываются напрямую в PostgreSQL через `profile-service`. Это позволяет:
+- немедленно обновлять агрегаты `candidate_behavioral_stats`
+- хранить полную историю взаимодействий для пересчета статистики
 
 ---
 
@@ -187,7 +180,7 @@ flowchart LR
 7. `candidate_behavioral_stats`
    - `candidate_id (pk/часть pk)`
    - (опционально) `time_slot`
-   - (опционально) `window_start` (если хотите считать “по окну”)
+   - (опционально) `window_start` (если хотите считать "по окну")
    - `likes_count`
    - `passes_count`
    - `mutual_match_count`
@@ -195,7 +188,7 @@ flowchart LR
    - индексы по candidate_id и (window_start/time_slot)
 
 Опционально (для восстановления/аудита):
-- `interaction_events` (append-only в Postgres) можно хранить после consume Kafka, чтобы пересчитывать статистику даже при проблемах consumer’а.
+- `interaction_events` (append-only в Postgres) для пересчета статистики при необходимости.
 
 ### 5.4 Версии весов и снэпшоты ранжирования (Level 3)
 
@@ -220,16 +213,15 @@ flowchart LR
 
 ## 6) Celery: пересчет рейтингов
 
-Kafka в этой схеме выступает как единый брокер:
-`Celery beat` планирует пересчеты и публикует job-сообщения в Kafka (например, в топик `rating.recompute.jobs`), а `Celery workers` потребляют эти сообщения и выполняют пересчет Level 2 / пересборку Level 3 снапшотов в PostgreSQL.
+Celery использует Redis как брокер задач. `Celery beat` планирует пересчеты по расписанию, `Celery workers` выполняют пересчет Level 2 / пересборку Level 3 снапшотов в PostgreSQL.
 
 ### 6.1 Инкрементальные обновления (почти real-time)
 
-Kafka consumer обновляет:
+При каждом взаимодействии `profile-service` напрямую обновляет:
 - `candidate_behavioral_stats` (инкрементально)
 
 Далее можно:
-- либо “мягко” дергать пересчет с задержкой
+- либо "мягко" дергать пересчет с задержкой
 - либо ждать периодических пересчетов (в зависимости от нагрузки).
 
 ### 6.2 Периодические пересчеты (regular recompute)
@@ -239,13 +231,13 @@ Celery beat/cron:
    - преобразует агрегаты `candidate_behavioral_stats` в шкалированные `behavioral_score`
 2. `recompute_primary_score` (можно батчами)
    - для viewer-candidate пар, которые реально будут показаны
-   - или для кандидатов в “кандидатном пуле”
+   - или для кандидатов в "кандидатном пуле"
 3. `recompute_combined_snapshot`
    - объединяет Level 1 + Level 2 + referral_bonus
    - записывает в `user_candidate_ratings_snapshot`
 
 Практический подход:
-- сначала сделать проще: батч “пули кандидатов на каждый viewer” периодически обновляется.
+- сначала сделать проще: батч "пули кандидатов на каждый viewer" периодически обновляется.
 
 ---
 
@@ -254,7 +246,7 @@ Celery beat/cron:
 Задача: чтобы при старте сессии viewer не ждал вычислений на каждом клике.
 
 Стратегия из вашего описания:
-- “первая анкета” проходит полный путь через сервисы
+- "первая анкета" проходит полный путь через сервисы
 - параллельно подгружаем еще `N=10` анкет в Redis
 - выдаем их viewer по очереди
 - после выдачи последней из 10 — повторяем круг.
@@ -277,15 +269,14 @@ Celery beat/cron:
 - scoring анкеты учитывает:
   - наличие главного фото (`is_main`)
   - количество активных фотографий
-  - (опционально) “качество” фото через метаданные (если появится)
+  - (опционально) "качество" фото через метаданные (если появится)
 
 ---
 
 ## 9) Метрики и логирование
 
 Точки метрик:
-- ingestion событий (Kafka produce/consume latency, количество ошибок)
-- lag consumer’ов Kafka (чтобы понимать, отстаем ли мы)
+- время записи взаимодействий в PostgreSQL (latency, количество ошибок)
 - время пересчета:
   - пересчет behavioral
   - пересчет combined snapshot

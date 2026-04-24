@@ -1,27 +1,27 @@
 """
 /start command handler — user registration.
-Collects user data and stores telegram_id as the primary identifier.
 """
-from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command, StateFilter
 
 from app.services.states import RegistrationState
-from shared.config import settings
+from app.services.profile_client import ProfileClient
 from shared.logger import setup_logger
 
 logger = setup_logger("start_handler")
-
 router = Router()
 
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
-    """Handle /start — begin registration."""
-    telegram_id = message.from_user.id
-    logger.info(f"User /start: telegram_id={telegram_id}")
-
+    await state.clear()
     await message.answer(
         f"👋 Привет, {message.from_user.first_name}!\n\n"
         "Добро пожаловать в Dating Bot!\n"
@@ -33,7 +33,6 @@ async def cmd_start(message: Message, state: FSMContext):
 
 @router.message(RegistrationState.waiting_for_name)
 async def process_name(message: Message, state: FSMContext):
-    """Process name input."""
     name = message.text.strip()
     if len(name) < 2 or len(name) > 50:
         await message.answer("❌ Имя должно быть от 2 до 50 символов. Попробуйте снова:")
@@ -42,26 +41,22 @@ async def process_name(message: Message, state: FSMContext):
     await state.update_data(name=name)
     await message.answer(
         f"Приятно познакомиться, {name}! 😊\n\n"
-        "Сколько вам лет? (введите число от 18 до 99):"
+        "Сколько вам лет? (от 18 до 99):"
     )
     await state.set_state(RegistrationState.waiting_for_age)
 
 
 @router.message(RegistrationState.waiting_for_age)
 async def process_age(message: Message, state: FSMContext):
-    """Process age input."""
     try:
         age = int(message.text.strip())
         if age < 18 or age > 99:
-            await message.answer("❌ Возраст должен быть от 18 до 99. Попробуйте снова:")
-            return
+            raise ValueError
     except ValueError:
-        await message.answer("❌ Пожалуйста, введите число:")
+        await message.answer("❌ Введите возраст числом от 18 до 99:")
         return
 
     await state.update_data(age=age)
-
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -69,18 +64,13 @@ async def process_age(message: Message, state: FSMContext):
             InlineKeyboardButton(text="👩 Женский", callback_data="gender_female"),
         ],
     ])
-
     await message.answer("Выберите ваш пол:", reply_markup=keyboard)
     await state.set_state(RegistrationState.waiting_for_gender)
 
 
 @router.callback_query(StateFilter(RegistrationState.waiting_for_gender))
 async def process_gender(callback: CallbackQuery, state: FSMContext):
-    """Process gender selection."""
-    gender_map = {
-        "gender_male": "male",
-        "gender_female": "female",
-    }
+    gender_map = {"gender_male": "male", "gender_female": "female"}
     gender = gender_map.get(callback.data)
     await state.update_data(gender=gender)
     await callback.message.answer("Из какого вы города? 🏙️")
@@ -90,7 +80,6 @@ async def process_gender(callback: CallbackQuery, state: FSMContext):
 
 @router.message(RegistrationState.waiting_for_city)
 async def process_city(message: Message, state: FSMContext):
-    """Process city input."""
     city = message.text.strip()
     if len(city) < 2:
         await message.answer("❌ Пожалуйста, введите название города:")
@@ -107,11 +96,8 @@ async def process_city(message: Message, state: FSMContext):
 @router.message(Command("skip"), RegistrationState.waiting_for_bio)
 @router.message(RegistrationState.waiting_for_bio)
 async def process_bio(message: Message, state: FSMContext):
-    """Process bio input."""
-    if message.text and not message.text.startswith("/skip"):
-        await state.update_data(bio=message.text.strip())
-    else:
-        await state.update_data(bio="")
+    bio = message.text.strip() if not message.text.startswith("/skip") else ""
+    await state.update_data(bio=bio)
 
     await message.answer(
         "Какие у вас интересы? (через запятую)\n"
@@ -124,8 +110,7 @@ async def process_bio(message: Message, state: FSMContext):
 @router.message(Command("skip"), RegistrationState.waiting_for_interests)
 @router.message(RegistrationState.waiting_for_interests)
 async def process_interests(message: Message, state: FSMContext):
-    """Process interests and complete registration."""
-    if message.text and not message.text.startswith("/skip"):
+    if not message.text.startswith("/skip"):
         interests = [i.strip() for i in message.text.split(",") if i.strip()]
     else:
         interests = []
@@ -133,28 +118,39 @@ async def process_interests(message: Message, state: FSMContext):
     data = await state.get_data()
     telegram_id = message.from_user.id
 
-    # --- Registration complete ---
-    # telegram_id stored as primary identifier.
-    # In Stage 3 this data will be sent to profile-service / database.
+    # Persist to profile-service
+    client = ProfileClient()
+    try:
+        await client.register(
+            telegram_id=telegram_id,
+            username=message.from_user.username,
+            name=data["name"],
+            age=data["age"],
+            gender=data["gender"],
+            city=data["city"],
+            bio=data.get("bio") or None,
+            interests=interests,
+        )
+        logger.info(f"User saved to profile-service: telegram_id={telegram_id}")
+    except Exception as exc:
+        logger.error(f"Failed to save user to profile-service: {exc}")
+        await message.answer(
+            "⚠️ Регистрация временно недоступна. Попробуйте /start позже."
+        )
+        await state.clear()
+        return
 
-    logger.info(
-        f"Registration complete: telegram_id={telegram_id}, "
-        f"name={data.get('name')}, age={data.get('age')}, "
-        f"gender={data.get('gender')}, city={data.get('city')}, "
-        f"interests={interests}"
-    )
+    await state.clear()
 
+    gender_icon = "♂️" if data["gender"] == "male" else "♀️"
     await message.answer(
         "🎉 Регистрация завершена!\n\n"
         f"📋 <b>Ваша анкета:</b>\n"
-        f"👤 Имя: {data.get('name')}\n"
-        f"🎂 Возраст: {data.get('age')}\n"
-        f"{'♂️' if data.get('gender') == 'male' else '♀️'} Пол: {data.get('gender')}\n"
-        f"🏙️ Город: {data.get('city')}\n"
-        f"💬 О себе: {data.get('bio', 'Не указано') or 'Не указано'}\n"
-        f"🎯 Интересы: {', '.join(interests) or 'Не указаны'}\n\n"
-        f"🆔 Telegram ID: <code>{telegram_id}</code>\n\n"
-        "Функции просмотра анкет и взаимодействия будут добавлены на следующих этапах."
+        f"👤 {data['name']}\n"
+        f"{gender_icon} Пол: {'Мужской' if data['gender'] == 'male' else 'Женский'}\n"
+        f"🎂 Возраст: {data['age']}\n"
+        f"🏙️ Город: {data['city']}\n"
+        f"💬 О себе: {data.get('bio') or 'не указано'}\n"
+        f"🎯 Интересы: {', '.join(interests) or 'не указаны'}\n\n"
+        "Используйте /browse чтобы смотреть анкеты других пользователей."
     )
-
-    await state.clear()

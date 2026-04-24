@@ -1,2 +1,9 @@
 aiogram==3.4.1
 python-dotenv==1.0.1
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+sqlalchemy[asyncio]==2.0.25
+asyncpg==0.29.0
+aiohttp==3.9.3
+redis[asyncio]==5.0.1
+pydantic==2.5.3
