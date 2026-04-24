@@ -51,11 +51,13 @@ flowchart LR
   BotGateway -->|POST /interactions| ProfileService["profile-service"]
   ProfileService -->|upsert interactions & Level2 aggregates| Postgres["PostgreSQL"]
 
-  CeleryWorkers["Celery workers"] -->|recompute Level2/Level3 snapshots| Postgres
+  CeleryBeat["Celery beat (scheduler)"] -->|publish recompute jobs| Redis["Redis (broker + cache)"]
+  Redis -->|consume jobs| CeleryWorkers["Celery workers"]
+  CeleryWorkers -->|recompute Level2/Level3 snapshots| Postgres
 
   BotGateway -->|request recommendations| RecoAPI["recommendation-service API"]
   RecoAPI -->|read snapshots / candidates| Postgres
-  RecoAPI -->|get/set pre-ranked queue| Redis["Redis"]
+  RecoAPI -->|get/set pre-ranked queue| Redis
 ```
 
 Ключевая идея:
