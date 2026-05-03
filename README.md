@@ -51,7 +51,7 @@ flowchart LR
   BotGateway -->|POST /interactions| ProfileService["profile-service"]
   ProfileService -->|upsert interactions & Level2 aggregates| Postgres["PostgreSQL"]
 
-  CeleryBeat["Celery beat (scheduler)"] -->|publish recompute jobs| Redis["Redis (broker + cache)"]
+  CeleryBeat["Celery beat (scheduler)"] -->|publish recompute jobs| Redis
   Redis -->|consume jobs| CeleryWorkers["Celery workers"]
   CeleryWorkers -->|recompute Level2/Level3 snapshots| Postgres
 
