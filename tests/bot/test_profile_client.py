@@ -25,7 +25,7 @@ def _mock_aiohttp_session(status: int, json_body: dict):
     mock_resp_cm.__aenter__ = AsyncMock(return_value=mock_response)
     mock_resp_cm.__aexit__ = AsyncMock(return_value=False)
 
-    mock_session = AsyncMock()
+    mock_session = MagicMock()
     mock_session.post.return_value = mock_resp_cm
     mock_session.get.return_value = mock_resp_cm
 

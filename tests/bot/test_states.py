@@ -15,6 +15,7 @@ EXPECTED_STATES = [
     "waiting_for_city",
     "waiting_for_bio",
     "waiting_for_interests",
+    "waiting_for_photos",
 ]
 
 
