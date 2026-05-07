@@ -46,9 +46,6 @@ jobs:
       - name: Run bot tests
         run: pytest tests/bot -v --tb=short
 
-      - name: Run full test suite with summary
-        run: pytest tests/ -v --tb=short --no-header -q
-
   # ─── Job 2: Build Docker images ──────────────────────────────────────────
   build:
     name: Build Docker images
