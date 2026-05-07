@@ -162,11 +162,15 @@ async def cb_interaction(callback: CallbackQuery, callback_data: InteractionCb):
         if result.get("is_match"):
             match_name = result.get("candidate_name", "пользователь")
             viewer_name = result.get("viewer_name", "пользователь")
-            await callback.message.answer(f"🎉 Взаимная симпатия с <b>{match_name}</b>!")
+            await callback.message.answer(
+                f"🎉 Взаимная симпатия с <b>{match_name}</b>!\n"
+                "Можете списаться с мэтчем в чате — /chats"
+            )
             try:
                 await callback.bot.send_message(
                     chat_id=candidate_id,
-                    text=f"🎉 Взаимная симпатия с <b>{viewer_name}</b>!",
+                    text=f"🎉 Взаимная симпатия с <b>{viewer_name}</b>!\n"
+                         "Можете списаться с мэтчем в чате — /chats",
                 )
             except Exception as exc:
                 logger.warning(f"Failed to send match notification to {candidate_id}: {exc}")
