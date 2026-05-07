@@ -7,6 +7,12 @@ Strategy:
   - Patch create_tables → AsyncMock (prevents lifespan from touching PG)
   - Individual tests patch CRUD/service functions to control return values
 """
+import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_ROOT / "services" / "profile-service"))
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
