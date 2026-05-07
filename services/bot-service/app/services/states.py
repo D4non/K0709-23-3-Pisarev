@@ -11,3 +11,8 @@ class RegistrationState(StatesGroup):
     waiting_for_city = State()
     waiting_for_bio = State()
     waiting_for_interests = State()
+    waiting_for_photos = State()
+
+
+class ChatState(StatesGroup):
+    chatting = State()

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.models.database import create_tables
-from app.api import users, interactions, recommendations
+from app.api import users, interactions, recommendations, photos, matches, stats
 from shared.logger import setup_logger
 
 logger = setup_logger("profile-service")
@@ -26,6 +26,9 @@ app = FastAPI(title="Dating Profile Service", version="3.0.0", lifespan=lifespan
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(interactions.router, prefix="/interactions", tags=["interactions"])
 app.include_router(recommendations.router, prefix="/recommendations", tags=["recommendations"])
+app.include_router(photos.router, prefix="/photos", tags=["photos"])
+app.include_router(matches.router, prefix="/matches", tags=["matches"])
+app.include_router(stats.router, prefix="/stats", tags=["stats"])
 
 
 @app.get("/health")

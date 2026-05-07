@@ -17,7 +17,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 
-from app.handlers import start_handler, browse_handler
+from app.handlers import start_handler, browse_handler, profile_handler, chat_handler, photos_handler, stats_handler
 from shared.config import settings
 from shared.logger import setup_logger
 
@@ -29,6 +29,11 @@ async def on_startup(bot: Bot):
         await bot.set_my_commands([
             BotCommand(command="start", description="Регистрация / обновление анкеты"),
             BotCommand(command="browse", description="Смотреть анкеты"),
+            BotCommand(command="profile", description="Моя анкета"),
+            BotCommand(command="chats", description="Чаты с совпадениями"),
+            BotCommand(command="photos", description="Мои фотографии"),
+            BotCommand(command="stats", description="Статистика анкеты"),
+            BotCommand(command="delete", description="Удалить анкету"),
         ])
         logger.info("Bot commands registered")
     except Exception as exc:
@@ -46,6 +51,10 @@ async def main():
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(start_handler.router)
     dp.include_router(browse_handler.router)
+    dp.include_router(profile_handler.router)
+    dp.include_router(chat_handler.router)
+    dp.include_router(photos_handler.router)
+    dp.include_router(stats_handler.router)
     dp.startup.register(on_startup)
 
     logger.info("Bot service initialized successfully")

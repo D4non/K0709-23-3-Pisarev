@@ -2,8 +2,9 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
-from app.models.orm import CandidateBehavioralStats
+from app.models.orm import CandidateBehavioralStats, User
 
 
 async def _get_or_create_stats(
@@ -58,6 +59,22 @@ async def record_skip(
     stats.updated_at = datetime.utcnow()
     await session.commit()
     return stats
+
+
+async def get_matches_for_user(session: AsyncSession, user_id: int) -> list[User]:
+    """Return User objects that are mutually matched with the given user."""
+    result = await session.execute(
+        select(CandidateBehavioralStats)
+        .where(
+            CandidateBehavioralStats.viewer_id == user_id,
+            CandidateBehavioralStats.is_matched == True,
+        )
+        .options(
+            selectinload(CandidateBehavioralStats.candidate).selectinload(User.profile),
+            selectinload(CandidateBehavioralStats.candidate).selectinload(User.photos),
+        )
+    )
+    return [s.candidate for s in result.scalars().all()]
 
 
 async def get_seen_candidate_ids(session: AsyncSession, viewer_id: int) -> set[int]:

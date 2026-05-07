@@ -8,8 +8,9 @@ Level 2 (Behavioral):     like ratio and match rate derived from all interaction
 Level 3 (Combined):       weighted blend of Level 1 and Level 2 scores.
 """
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
-from app.models.orm import User, CandidateBehavioralStats
+from app.models.orm import User, CandidateBehavioralStats, UserCandidateRatingSnapshot
 from app.crud.profiles import get_active_candidates
 from app.crud.interactions import get_seen_candidate_ids
 
@@ -111,6 +112,32 @@ def calculate_combined(level1: float, level2: float, interaction_count: int) -> 
 
 # ─── Main ranking function ────────────────────────────────────────────────────
 
+async def _get_ranked_from_snapshots(
+    session: AsyncSession,
+    viewer_user_id: int,
+    seen_ids: set[int],
+    limit: int,
+) -> list[int] | None:
+    """
+    Fast path: read pre-computed Level 3 scores from the snapshot table.
+    Returns None when no snapshots are available (e.g. before the first
+    Celery run), so the caller can fall back to real-time computation.
+    """
+    result = await session.execute(
+        select(UserCandidateRatingSnapshot)
+        .where(
+            UserCandidateRatingSnapshot.viewer_id == viewer_user_id,
+            ~UserCandidateRatingSnapshot.candidate_id.in_(seen_ids),
+        )
+        .order_by(UserCandidateRatingSnapshot.combined_score.desc())
+        .limit(limit)
+    )
+    rows = result.scalars().all()
+    if not rows:
+        return None
+    return [row.candidate_id for row in rows]
+
+
 async def get_ranked_candidate_ids(
     session: AsyncSession,
     viewer_telegram_id: int,
@@ -120,10 +147,21 @@ async def get_ranked_candidate_ids(
     """
     Return up to `limit` candidate user IDs ranked by combined score,
     excluding already-seen profiles.
+
+    Fast path: reads pre-computed snapshots written by the Celery task
+    `recompute_combined_snapshots`. Falls back to real-time computation
+    when snapshots are not yet available (first run or cache miss).
     """
-    from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
+    seen_ids = await get_seen_candidate_ids(session, viewer_user_id)
+
+    # Try snapshot-based ranking first (pre-computed by Celery)
+    snapshot_ids = await _get_ranked_from_snapshots(session, viewer_user_id, seen_ids, limit)
+    if snapshot_ids is not None:
+        return snapshot_ids
+
+    # Real-time fallback: compute scores on-the-fly
     result = await session.execute(
         select(User)
         .where(User.id == viewer_user_id)
@@ -136,7 +174,6 @@ async def get_ranked_candidate_ids(
     if viewer is None:
         return []
 
-    seen_ids = await get_seen_candidate_ids(session, viewer_user_id)
     candidates = await get_active_candidates(session, viewer_user_id, seen_ids)
 
     scored: list[tuple[int, float]] = []

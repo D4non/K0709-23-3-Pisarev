@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.database import get_session
-from app.schemas.user import RegisterUserRequest, RegisterUserResponse, ProfileResponse
+from app.models.database import get_session, get_redis
+from app.schemas.user import RegisterUserRequest, RegisterUserResponse, ProfileResponse, PhotoOut
 from app.crud.users import create_or_update_user, get_user_by_telegram_id
+from app.services.cache import invalidate
+import redis.asyncio as aioredis
 from shared.logger import setup_logger
 
 logger = setup_logger("profile-service.api.users")
@@ -54,4 +56,26 @@ async def get_profile(
         city=user.profile.city,
         bio=user.profile.bio,
         interests=[i.interest for i in user.interests],
+        photos=[
+            PhotoOut(id=p.id, url=p.url, object_key=p.object_key, is_primary=p.is_primary)
+            for p in user.photos
+        ],
     )
+
+
+@router.delete("/{telegram_id}")
+async def delete_profile(
+    telegram_id: int,
+    session: AsyncSession = Depends(get_session),
+    redis: aioredis.Redis = Depends(get_redis),
+):
+    user = await get_user_by_telegram_id(session, telegram_id)
+    if user is None or user.profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    user.profile.is_active = False
+    await session.commit()
+    await invalidate(redis, telegram_id)
+
+    logger.info(f"Profile deactivated: telegram_id={telegram_id}")
+    return {"message": "Profile deactivated. Use /start to create a new one."}

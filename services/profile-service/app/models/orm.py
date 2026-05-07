@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
-    BigInteger, Boolean, Column, DateTime, ForeignKey,
+    BigInteger, Boolean, Column, DateTime, Float, ForeignKey,
     Integer, String, Text, UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -85,6 +85,7 @@ class UserPhoto(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     url = Column(String(500), nullable=False)
+    object_key = Column(String(500), nullable=False, server_default="")
     is_primary = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -108,3 +109,23 @@ class CandidateBehavioralStats(Base):
 
     viewer = relationship("User", foreign_keys=[viewer_id], back_populates="given_interactions")
     candidate = relationship("User", foreign_keys=[candidate_id], back_populates="received_interactions")
+
+
+class UserCandidateRatingSnapshot(Base):
+    """
+    Pre-computed Level 3 rating snapshot for a viewer-candidate pair.
+    Populated by Celery tasks (recompute_combined_snapshots) every hour.
+    Allows the recommendation service to rank candidates without heavy
+    real-time computation on each API request.
+    """
+
+    __tablename__ = "user_candidate_ratings_snapshot"
+    __table_args__ = (UniqueConstraint("viewer_id", "candidate_id"),)
+
+    id = Column(Integer, primary_key=True)
+    viewer_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    candidate_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    primary_score = Column(Float, nullable=False, default=0.0)
+    behavioral_score = Column(Float, nullable=False, default=0.5)
+    combined_score = Column(Float, nullable=False, default=0.0)
+    computed_at = Column(DateTime, default=datetime.utcnow)

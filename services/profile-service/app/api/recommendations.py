@@ -6,7 +6,7 @@ import redis.asyncio as aioredis
 
 from app.models.database import get_session, get_redis
 from app.models.orm import User
-from app.schemas.user import ProfileResponse
+from app.schemas.user import ProfileResponse, PhotoOut
 from app.crud.users import get_user_by_telegram_id
 from app.services.cache import get_or_compute_next, invalidate
 from shared.logger import setup_logger
@@ -22,6 +22,7 @@ async def _fetch_user_by_id(session: AsyncSession, user_id: int) -> User | None:
         .options(
             selectinload(User.profile),
             selectinload(User.interests),
+            selectinload(User.photos),
         )
     )
     return result.scalar_one_or_none()
@@ -59,6 +60,10 @@ async def get_recommendation(
         city=candidate.profile.city,
         bio=candidate.profile.bio,
         interests=[i.interest for i in candidate.interests],
+        photos=[
+            PhotoOut(id=p.id, url=p.url, object_key=p.object_key, is_primary=p.is_primary)
+            for p in candidate.photos
+        ],
     )
 
 

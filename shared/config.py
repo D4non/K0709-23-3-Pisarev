@@ -19,6 +19,13 @@ class Settings:
     )
     REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
     PROFILE_SERVICE_URL = os.getenv("PROFILE_SERVICE_URL", "http://profile-service:8000")
+    MEDIA_SERVICE_URL = os.getenv("MEDIA_SERVICE_URL", "http://media-service:8001")
+
+    # MinIO / S3-compatible object storage
+    MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio:9000")
+    MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+    MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+    MINIO_BUCKET = os.getenv("MINIO_BUCKET", "dating-photos")
 
 
 settings = Settings()
